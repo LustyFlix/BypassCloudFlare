@@ -1,25 +1,27 @@
-name: FlareSolverr + Ngrok
+name: FlareSolverr + Ngrok (6h)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # Manual trigger
   schedule:
-    - cron: '0 2 * * *' # daily at 2:00 UTC
+    - cron: '0 2 * * *'  # Optional: daily at 2:00 UTC
 
 jobs:
   flaresolverr-ngrok:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Check Docker
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Check Docker version
         run: docker --version
 
-      - name: Start FlareSolverr
+      - name: Start FlareSolverr Docker
         run: |
           docker run -d --name flaresolverr -p 8191:8191 ghcr.io/flaresolverr/flaresolverr:latest
           sleep 5
 
-      - name: Install Ngrok
+      - name: Install Ngrok & jq
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
           echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
@@ -29,10 +31,20 @@ jobs:
       - name: Authenticate Ngrok
         run: ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
 
-      - name: Expose FlareSolverr
+      - name: Start Ngrok tunnel
         run: |
           nohup ngrok http 8191 --log=stdout > ngrok.log 2>&1 &
           sleep 5
+          # Print initial URL
           NGROK_URL=$(curl --silent http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
           echo "FlareSolverr public URL: $NGROK_URL"
           echo "NGROK_URL=$NGROK_URL" >> $GITHUB_ENV
+
+      - name: Keep job alive for 6 hours
+        run: |
+          echo "FlareSolverr + Ngrok running. Keeping the job alive for 6 hours..."
+          for i in {1..360}; do
+            NGROK_URL=$(curl --silent http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+            echo "[$(date)] FlareSolverr public URL: $NGROK_URL"
+            sleep 60
+          done
